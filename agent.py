@@ -200,8 +200,6 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
     session["fit_card"] = fit_card_return
 
-
-
     return session
 
 

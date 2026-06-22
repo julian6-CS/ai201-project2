@@ -47,7 +47,7 @@ def handle_query(user_query: str, wardrobe_choice: str) -> tuple[str, str, str]:
 
     if len(user_query) == 0:
         print("Provide a Valid Query Please")
-        return "error: Provide a Valid Query Please","",""
+        return ("error: Provide a Valid Query Please","","")
 
 
     wardrobe_for_agent = None
@@ -57,15 +57,15 @@ def handle_query(user_query: str, wardrobe_choice: str) -> tuple[str, str, str]:
         wardrobe_for_agent == get_empty_wardrobe()
     else:
         print("Enter A Valid Wardobe Entry")
-        return "error: Enter A Valid Wardobe Entry","",""
+        return ("error: Enter A Valid Wardobe Entry","","")
     
 
     state_session = run_agent(user_query,wardrobe_for_agent)
 
-    if not state_session["error"]:
-        return state_session["error"],"",""
+    if state_session["error"]:
+        return (state_session["error"],"","")
 
-    return state_session["selected_item"], state_session["outfit_suggestion"], state_session["fit_card"]
+    return (state_session["selected_item"].get("description"), state_session["outfit_suggestion"], state_session["fit_card"])
 
 
 # ── interface ─────────────────────────────────────────────────────────────────
