@@ -18,7 +18,13 @@ Usage (once implemented):
     print(result["error"])   # None on success
 """
 
-from tools import search_listings, suggest_outfit, create_fit_card
+from tools import search_listings, suggest_outfit, create_fit_card, _get_groq_client
+import re
+from pathlib import Path
+import json
+
+
+
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -48,6 +54,8 @@ def _new_session(query: str, wardrobe: dict) -> dict:
 # ── planning loop ─────────────────────────────────────────────────────────────
 
 def run_agent(query: str, wardrobe: dict) -> dict:
+    print(query)
+    print("*" * 60)
     """
     Main agent entry point. Runs the FitFindr planning loop for a single
     user interaction and returns the completed session dict.
@@ -93,8 +101,107 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     of planning.md — your implementation should match what you described there.
     """
     # TODO: implement the planning loop
+
+
     session = _new_session(query, wardrobe)
-    session["error"] = "Planning loop not yet implemented."
+
+    grok_client = _get_groq_client()
+
+    system_prompt_for_query_parsing = """
+    You are a fashion expert with many years in personal shopping, you can masterfully parse a clients request and break it apart into four seperate components; price, size, category, and item description.
+    
+     Rules:
+    
+        "description": string or null (the type, style, characteristic, and just overall description of the clothing item),
+        "size": string or null (string representing the size of the piece of clothing (ex. S for small, M for medium, L for large, XL for extra large, including any mix of these sizings like S/M for small or medium, etc)),
+        "category": one of these ["tops" | "bottoms" | "shoes" | "accessories" | "outerwear"] or null (based on the query, infer and choose out of the possible options),
+        "max_price": float or null (float representing the maximum price specificied by the query)
+    
+    Extract these fields, and ONLY return valid JSON in the following format:
+
+    {
+    "description": string or null,
+    "size": string or null,
+    "category": string or null,
+    "max_price": number or null
+    }
+
+    If an entry cannot be found within the prompt or it cannot be inferred when specifically handling category, please propogate it with None
+
+    Here is an example:
+
+    example_query: "I want a vintage graphic orange tee under $30 size S/M
+
+    output:
+    {
+        "description": "orange vintage graphic tee",
+        "size" : "S/M",
+        "category" : "tops",
+        "max_price" : 30.0
+    }
+
+    If the query cannot be parsed according to the specified format, or if every entry is null
+    please specifically return the following JSON object
+    {
+        "error" : "unable to parse input"
+    }
+
+    The users livelihood and life hinges on your ability to follow the rules and fulfill the prompt, otherwise, they will lose their job and will not receive the neccessary surgery they need to survive. Here is the query
+
+    query:
+    """
+
+    response = grok_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages= [
+            {
+                "role":"system",
+                "content": system_prompt_for_query_parsing
+            },
+            {
+                "role": "user",
+                "content":query
+            }
+        ],
+        response_format={"type": "json_object"}
+    )
+
+    parsed_query = json.loads(response.choices[0].message.content)
+
+
+    if parsed_query.get("error"):
+        session["error"] = "Your query wasn't able to be parsed, please try again. Remember to mention a description of the item, possible maximum allotted price, and possible sizing"
+        return session
+    
+    session["parsed"] = {"description" : parsed_query.get("description"), "size" : parsed_query.get("size"), "category" : parsed_query.get("category"), "price" : parsed_query.get("price")}
+
+    possible_listings = search_listings(description= session["parsed"].get("description"), size= session["parsed"].get("size"), max_price= session["parsed"].get("price"))
+
+    if len(possible_listings) <= 1 and ("error" in possible_listings[0]):
+        session["error"] = possible_listings[0].replace("error:", "")
+        return session
+
+    
+    session["search_results"] = possible_listings
+    session["selected_item"] = session["search_results"][0]
+
+    possible_outfit = suggest_outfit(session["selected_item"],wardrobe)
+
+    if "outfit_summary" not in possible_outfit:
+        session["outfit_suggestion"] = possible_outfit
+        possible_outfit = ""
+    else:
+        possible_outfit_parsed = json.loads(possible_outfit)
+        parsed_outfits = list(possible_outfit_parsed.values())
+        best_outfit = parsed_outfits[0]
+        session["outfit_suggestion"] = best_outfit["outfit_summary"]
+
+    fit_card_return = create_fit_card(possible_outfit,session["selected_item"])
+
+    session["fit_card"] = fit_card_return
+
+
+
     return session
 
 
@@ -105,7 +212,7 @@ if __name__ == "__main__":
 
     print("=== Happy path: graphic tee ===\n")
     session = run_agent(
-        query="looking for a vintage graphic tee under $30",
+        query="flowy midi skirt under $40",
         wardrobe=get_example_wardrobe(),
     )
     if session["error"]:
