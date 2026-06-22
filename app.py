@@ -51,19 +51,19 @@ def handle_query(user_query: str, wardrobe_choice: str) -> tuple[str, str, str]:
 
 
     wardrobe_for_agent = None
+    print (wardrobe_choice)
     if wardrobe_choice == "Example wardrobe":
         wardrobe_for_agent = get_example_wardrobe()
-    elif wardrobe_for_agent == "Empty wardrobe (new user)":
-        wardrobe_for_agent == get_empty_wardrobe()
     else:
-        print("Enter A Valid Wardobe Entry")
-        return ("error: Enter A Valid Wardobe Entry","","")
+        wardrobe_for_agent == get_empty_wardrobe()
     
 
     state_session = run_agent(user_query,wardrobe_for_agent)
 
     if state_session["error"]:
         return (state_session["error"],"","")
+    
+    print(state_session["parsed"])
 
     return (state_session["selected_item"].get("description"), state_session["outfit_suggestion"], state_session["fit_card"])
 
